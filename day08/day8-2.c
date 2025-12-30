@@ -8,8 +8,6 @@
 struct box {
   int i; // index
   unsigned x, y, z;
-  unsigned len;
-  struct box *next;
 };
 
 struct dist {
@@ -25,37 +23,27 @@ int cmp(const void *a, const void *b)
   return (x->dist > y->dist) - (x->dist < y->dist); // sort asc by dist
 }
 
-// void box_free(struct box *box)
-// {
-//   if (box != NULL) {
-//     box_free(box->next);
-//     free(box);
-//   }
-// }
-//
-// void boxes_free(struct box **boxes, int size)
-// {
-//   for (int i = 0; i < size; ++i)
-//     box_free(boxes[i]);
-//   free(boxes);
-// }
-//
-// void dists_free(struct dist **dists, int size)
-// {
-//   for (int i = 0; i < size; ++i)
-//     free(dists[i]);
-//   free(dists);
-// }
+// find func for union-find
+int find(int n, int *arr)
+{
+  if (arr[n] == n)
+    return n;
+  return find(arr[n], arr);
+}
+// union func for union-find
+// return the length of the union
+unsigned unite(int a, int b, int *reps, unsigned *lens)
+{
+  int a_rep = find(a, reps), b_rep = find(b, reps);
+  if (a_rep != b_rep) {
+    reps[b_rep] = a_rep;
+    lens[a_rep] += lens[b_rep];
+    lens[b_rep] = 0; // only store a length for representatives
+  }
+  return lens[a_rep];
+}
 
-// void dl_free(struct dist_list *dl)
-// {
-//   if (dl != NULL) {
-//     dl_free(dl->next);
-//     free(dl);
-//   }
-// }
-
-int main (int argc, char *argv[])
+int main(int argc, char *argv[])
 {
   if (argc != 2) {
     fprintf(stderr, "USAGE: ./day8 foo.txt\n");
@@ -69,8 +57,12 @@ int main (int argc, char *argv[])
       ++size;
 
   fseek(f, 0, SEEK_SET); // return to start
+  int reps[size]; // representatives list for union-find
+  unsigned lens[size];
   struct box *boxes[size];
   for (int i = 0; i < size; ++i) {
+    reps[i] = i; // initially all disjoint sets
+    lens[i] = 1;
     boxes[i] = malloc(sizeof(struct box));
     if (boxes[i] == NULL) {
       fprintf(stderr, "main(): malloc failed\n");
@@ -78,27 +70,7 @@ int main (int argc, char *argv[])
     }
     boxes[i]->i = i;
     fscanf(f, "%u,%u,%u\n", &(boxes[i]->x), &(boxes[i]->y), &(boxes[i]->z));
-    boxes[i]->len = 1;
-    boxes[i]->next = boxes[i]; // make cycles
   }
-  // for (int i = 0; i < size; ++i)
-  //   fprintf(stderr, "%u,%u,%u\n", boxes[i]->x, boxes[i]->y, boxes[i]->z);
-
-  // actually the squared dists so use unsigned long long
-  // unsigned long long *dists[size];
-  // for (int i = 0; i < size; ++i) {
-  //   dists[i] = malloc(size * size * sizeof(unsigned long long));
-  //   if (dists[i] == NULL) {
-  //     fprintf(stderr, "main(): malloc failed\n");
-  //     return 2;
-  //   }
-  // }
-  // if (dists == NULL) {
-  //   fprintf(stderr, "main(): malloc failed\n");
-  //   return 2;
-  // }
-  // for (int i = 0; i < size; ++i)
-  //   dists[i][i] = 0;
 
   // build sorted distances list
   struct dist **dists = malloc(sizeof(struct dist *) * triangle(size));
@@ -135,62 +107,14 @@ int main (int argc, char *argv[])
 
   qsort(dists, triangle(size), sizeof(dists[0]), cmp);
 
-  unsigned len = 1;
   int i = 0;
-  while (len < size) {
-    // append b to a
-
+  while (1) {
     struct box *a = dists[i]->a;
     struct box *b = dists[i]->b;
-    unsigned alen = a->len, blen = b->len;
-
-    // fprintf(stderr, "%u: (%u,%u,%u)-(%u,%u,%u)\n", len, a->x, a->y, a->z,
-    //                                                     b->x, b->y, b->z);
-
-    // check if they're already in the same circuit
-    for (int j = 0; j < alen; ++j) {
-      if (a == b) {
-        // fprintf(stderr, "skipped\n\n");
-        goto same_circuit; // instead of continue inside nested for loop
-      }
-      a = a->next;
-    }
-
-    len = alen + blen;
-    if (len == size) {
+    ++i;
+    if (unite(a->i, b->i, reps, lens) >= size) {
       printf("%llu\n", (unsigned long long) a->x * b->x);
       break;
     }
-
-    struct box *bcpy = b;
-    // reach element just before b in the cycle:
-    for (int j = 0; j < blen - 1; ++j) {
-      boxes[b->i] = NULL;
-      b->len = len;
-      b = b->next;
-    }
-    boxes[b->i] = NULL;
-    b->len = len;
-    // update remaining lengths:
-    for (int j = 0; j < alen; ++j) {
-      boxes[a->i] = NULL;
-      a->len = len;
-      a = a->next;
-    }
-    boxes[a->i] = a;
-    b->next = a->next;
-    a->next = bcpy;
-
-    // for (int j = 0; j < len; ++j) {
-    //   fprintf(stderr, "(%u,%u,%u)-", a->x, a->y, a->z);
-    //   a = a->next;
-    // }
-    // fprintf(stderr, "(%u,%u,%u)\n\n", a->x, a->y, a->z);
-
-same_circuit:
-    ++i;
   }
-
-  // boxes_free(boxes, size);
-  // dists_free(dists, triangle(size));
 }

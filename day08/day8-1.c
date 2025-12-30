@@ -8,8 +8,6 @@
 struct box {
   int i; // index
   unsigned x, y, z;
-  unsigned len;
-  struct box *next;
 };
 
 struct dist {
@@ -25,37 +23,26 @@ int cmp(const void *a, const void *b)
   return (x->dist > y->dist) - (x->dist < y->dist); // sort asc by dist
 }
 
-// void box_free(struct box *box)
-// {
-//   if (box != NULL) {
-//     box_free(box->next);
-//     free(box);
-//   }
-// }
-//
-// void boxes_free(struct box **boxes, int size)
-// {
-//   for (int i = 0; i < size; ++i)
-//     box_free(boxes[i]);
-//   free(boxes);
-// }
-//
-// void dists_free(struct dist **dists, int size)
-// {
-//   for (int i = 0; i < size; ++i)
-//     free(dists[i]);
-//   free(dists);
-// }
+// find func for union-find
+int find(int n, int *reps)
+{
+  if (reps[n] == n)
+    return n;
+  return find(reps[n], reps);
+}
+// union func for union-find
+// also updates lengths of parent
+void unite(int a, int b, int *reps, unsigned *lens)
+{
+  int a_rep = find(a, reps), b_rep = find(b, reps);
+  if (a_rep != b_rep) {
+    reps[b_rep] = a_rep;
+    lens[a_rep] += lens[b_rep];
+    lens[b_rep] = 0; // only store a length for representatives
+  }
+}
 
-// void dl_free(struct dist_list *dl)
-// {
-//   if (dl != NULL) {
-//     dl_free(dl->next);
-//     free(dl);
-//   }
-// }
-
-int main (int argc, char *argv[])
+int main(int argc, char *argv[])
 {
   if (argc != 2) {
     fprintf(stderr, "USAGE: ./day8 foo.txt\n");
@@ -69,8 +56,12 @@ int main (int argc, char *argv[])
       ++size;
 
   fseek(f, 0, SEEK_SET); // return to start
+  int reps[size]; // representatives list for union-find
+  unsigned lens[size]; // lengths for each representative
   struct box *boxes[size];
   for (int i = 0; i < size; ++i) {
+    reps[i] = i; // initially all disjoint sets
+    lens[i] = 1; // initially all length 1
     boxes[i] = malloc(sizeof(struct box));
     if (boxes[i] == NULL) {
       fprintf(stderr, "main(): malloc failed\n");
@@ -78,8 +69,6 @@ int main (int argc, char *argv[])
     }
     boxes[i]->i = i;
     fscanf(f, "%u,%u,%u\n", &(boxes[i]->x), &(boxes[i]->y), &(boxes[i]->z));
-    boxes[i]->len = 1;
-    boxes[i]->next = boxes[i]; // make cycles
   }
   // for (int i = 0; i < size; ++i)
   //   fprintf(stderr, "%u,%u,%u\n", boxes[i]->x, boxes[i]->y, boxes[i]->z);
@@ -135,70 +124,25 @@ int main (int argc, char *argv[])
 
   qsort(dists, triangle(size), sizeof(dists[0]), cmp);
 
-  for (int i = 0; i < 1000; ++i) { // change the num of pairs accordingly
-    // append b to a
+  for (int i = 0; i < 1000; ++i) // change the num of pairs accordingly
+    unite(dists[i]->a->i, dists[i]->b->i, reps, lens);
 
-    struct box *a = dists[i]->a;
-    struct box *b = dists[i]->b;
-    unsigned alen = a->len, blen = b->len, len = alen + blen;
-
-    // fprintf(stderr, "%u: (%u,%u,%u)-(%u,%u,%u)\n", len, a->x, a->y, a->z,
-    //                                                     b->x, b->y, b->z);
-
-    // check if they're already in the same circuit
-    for (int j = 0; j < alen; ++j) {
-      if (a == b) {
-        // fprintf(stderr, "skipped\n\n");
-        goto same_circuit; // instead of continue inside nested for loop
-      }
-      a = a->next;
-    }
-
-    struct box *bcpy = b;
-    // reach element just before b in the cycle:
-    for (int j = 0; j < blen - 1; ++j) {
-      boxes[b->i] = NULL;
-      b->len = len;
-      b = b->next;
-    }
-    boxes[b->i] = NULL;
-    b->len = len;
-    // update remaining lengths:
-    for (int j = 0; j < alen; ++j) {
-      boxes[a->i] = NULL;
-      a->len = len;
-      a = a->next;
-    }
-    boxes[a->i] = a;
-    b->next = a->next;
-    a->next = bcpy;
-
-    // for (int j = 0; j < len; ++j) {
-    //   fprintf(stderr, "(%u,%u,%u)-", a->x, a->y, a->z);
-    //   a = a->next;
-    // }
-    // fprintf(stderr, "(%u,%u,%u)\n\n", a->x, a->y, a->z);
-
-same_circuit: ;
-  }
   unsigned largest[3] = {1, 1, 1};
   for (int i = 0; i < size; ++i) {
-    if (boxes[i] == NULL)
-      continue;
-    unsigned len = boxes[i]->len;
-    if (len > largest[0]) {
-      largest[2] = largest[1];
-      largest[1] = largest[0];
-      largest[0] = len;
-    } else if (len > largest[1]) {
-      largest[2] = largest[1];
-      largest[1] = len;
-    } else if (len > largest[2]) {
-      largest[2] = len;
+    // fprintf(stderr, "%d %u\n", i, lens[i]);
+    unsigned len = lens[i];
+    if (len > 0) { // most will be part of a circuit => 0
+      if (len > largest[0]) {
+        largest[2] = largest[1];
+        largest[1] = largest[0];
+        largest[0] = len;
+      } else if (len > largest[1]) {
+        largest[2] = largest[1];
+        largest[1] = len;
+      } else if (len > largest[2]) {
+        largest[2] = len;
+      }
     }
   }
   printf("%llu\n", (unsigned long long) largest[0] * largest[1] * largest[2]);
-
-  // boxes_free(boxes, size);
-  // dists_free(dists, triangle(size));
 }
